@@ -5,6 +5,7 @@ import org.openqa.selenium.*;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import pages.CitySelection;
+import resources.PageSourceDebug;
 
 import java.io.File;
 import java.time.Duration;
@@ -40,6 +41,37 @@ public class PDPScreenTest extends BaseTest {
         //City Selection Flow ends
 
         By productSelector = By.cssSelector(".swiper-slide a");
+        js = (JavascriptExecutor) driver;
+
+        int scrollStep = 500;
+        int maxScroll = 4000;
+        boolean productsLoaded = false;
+
+        for (int pos = 0; pos <= maxScroll; pos += scrollStep) {
+            js.executeScript("window.scrollTo(0, arguments[0]);", pos);
+            Thread.sleep(800);
+
+            List<WebElement> products = driver.findElements(productSelector);
+            if (products.size() > 0) {
+                System.out.println("✅ Found " + products.size() + " products at scroll position: " + pos);
+                productsLoaded = true;
+                break;
+            }
+        }
+
+        if (!productsLoaded) {
+            System.out.println("❌ Failed to load any products.");
+            PageSourceDebug debugger = new PageSourceDebug();
+            debugger.save("failed_to_load_products.html");
+            return;
+        }
+
+        // ✅ Save page source
+        PageSourceDebug saver = new PageSourceDebug();
+        saver.driver = this.driver;
+        saver.save("pagesource/category_dairy.html");
+
+        System.out.println("✅ Category page source saved.");
         List<WebElement> products = driver.findElements(productSelector);
         int totalCaptured = products.size();
         System.out.println("✅ Found total products: " + totalCaptured);
@@ -50,33 +82,28 @@ public class PDPScreenTest extends BaseTest {
 
             WebElement product = products.get(i);
 
-            ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", product);
-            Thread.sleep(500);
-            String productName = "";
             try {
+                ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", product);
+                Thread.sleep(500); // wait for swiper to mount content
+
                 WebElement title = product.findElement(By.cssSelector(".product_title_name"));
-                productName = title.getText().trim().replaceAll("[^a-zA-Z0-9]", "_");
-            } catch (StaleElementReferenceException e) {
-                System.out.println("⚠️ Stale element while extracting title. Skipping index: " + i);
-                continue;
+                String productName = title.getText().trim().replaceAll("[^a-zA-Z0-9]", "_");
+                product.click();
+                wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".product_title_name")));
+
+                File screenshot = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
+                File targetFile = new File("screenshots/pdp/" + productName + ".png");
+                targetFile.getParentFile().mkdirs();
+                screenshot.renameTo(targetFile);
+
+                System.out.println("📸 Captured: " + productName);
+
+                driver.navigate().back();
+                wait.until(ExpectedConditions.visibilityOfElementLocated(productSelector));
+
+            } catch (StaleElementReferenceException | NoSuchElementException e) {
+                System.out.println("⚠️ Skipping index " + i + " due to stale element.");
             }
-
-            product.click();
-
-            // Wait for PDP title to confirm navigation
-            By pdpTitle = By.cssSelector(".product_title_name");
-            wait.until(ExpectedConditions.visibilityOfElementLocated(pdpTitle));
-
-            // Take screenshot
-            File screenshot = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
-            File targetFile = new File("screenshots/pdp/" + productName + ".png");
-            targetFile.getParentFile().mkdirs();
-            screenshot.renameTo(targetFile);
-
-            System.out.println("📸 Captured: " + productName);
-
-            driver.navigate().back();
-            wait.until(ExpectedConditions.visibilityOfElementLocated(productSelector));
         }
     }
 }
